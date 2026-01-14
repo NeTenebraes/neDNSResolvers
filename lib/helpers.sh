@@ -16,5 +16,10 @@ cleanup() {
     exit 1
 }
 
+log_status() {
+    echo -e "\n\e[1;34m[➜]\e[0m $1" >&2
+    sleep 1.5
+}
+
 # Exportamos la función para que sub-shells puedan verla si es necesario
 export -f cleanup
