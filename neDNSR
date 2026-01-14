@@ -2,14 +2,16 @@
 # /opt/neDNSR/neDNSR
 
 BASE_DIR="/opt/neDNSR"
-MASTER_LIST="$BASE_DIR/master_resolvers.txt"
 LIB_DIR="$BASE_DIR/lib"
-DNS_VENV="$LIB_DIR/dns_env/bin/dnsvalidator" 
+# Importar helpers primero para tener acceso a cleanup 
+source "$LIB_DIR/helpers.sh"
 
+# Registrar el trap usando la función que está dentro de helpers.sh [cite: 4]
+trap cleanup SIGINT SIGTERM
+
+# Resto de imports 
 source "$LIB_DIR/collector.sh"
 source "$LIB_DIR/validator.sh"
-
-trap cleanup SIGINT SIGTERM
 
 # Valores por defecto
 THREADS=100
@@ -37,21 +39,17 @@ done
 
 [[ -z "$DOMAIN" ]] && usage
 
-# PASO 1: Recolectar de fuentes públicas
-fetch_and_merge 
+# PASO 1: Recolectar
+fetch_and_merge
 
-# PASO 2: Validación de Integridad (DNSValidator)
-# Filtra resolvers que están caídos o dan respuestas falsas (spoofing)
-echo "[*] Ejecutando DNSValidator sobre la lista maestra..." >&2
+# PASO 2: Validar
+echo "[*] Ejecutando DNSValidator..." >&2
 TMP_VALIDATED=$(mktemp)
 $DNS_VENV -tL "$MASTER_LIST" -threads "$THREADS" -o "$TMP_VALIDATED"
 
-# PASO 3: Ranking por Latencia y Filtro Final
-# Solo los que pasaron DNSValidator entran al benchmark de velocidad
-COUNT=$(measure_and_rank "$TMP_VALIDATED" "$OUTPUT" "$LIMIT" "$THREADS" "$DOMAIN")
-
-echo -e "\n[+] Proceso finalizado exitosamente."
-echo "[+] DNS Validados y Rápidos: $COUNT"
-echo "[+] Resultados guardados en: $OUTPUT"
+# PASO 3: Rankear (solo si hay resultados)
+if [[ -s "$TMP_VALIDATED" ]]; then
+    measure_and_rank "$TMP_VALIDATED" "$OUTPUT" "$LIMIT" "$THREADS" "$DOMAIN"
+fi
 
 rm -f "$TMP_VALIDATED"
