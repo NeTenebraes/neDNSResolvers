@@ -45,7 +45,7 @@ fetch_and_merge
 # PASO 2: Validar
 echo "[*] Ejecutando DNSValidator..." >&2
 TMP_VALIDATED=$(mktemp)
-$DNS_VENV -tL "$MASTER_LIST" -threads "$THREADS" -o "$TMP_VALIDATED"
+dnsvalidator -tL "$MASTER_LIST" -threads "$THREADS" -o "$TMP_VALIDATED"
 
 # PASO 3: Rankear (solo si hay resultados)
 if [[ -s "$TMP_VALIDATED" ]]; then
