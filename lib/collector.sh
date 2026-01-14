@@ -33,22 +33,27 @@ validate_alive() {
     local threads=${1:-100}
     local temp_live=$(mktemp)
 
-    echo "[*] Fase 2: Verificando supervivencia (MassDNS) @ $threads pps..."
+    echo "[*] Fase 2: Validando supervivencia..."
 
-    # Ejecución de MassDNS sobre el mismo Master
-    # -s: Tasa de paquetes (ajusta según tu conexión de Arch)
-    # -o S: Output simple
-    massdns -r "$MASTER_LIST" -t A -o S -s "$threads" --quiet <<< "$DOMAIN_CHECK" | \
-    awk '{print $NF}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | sort -u > "$temp_live"
+    # 1. Usamos un archivo temporal para el input de nombres para evitar líos de stdin
+    echo "google.com" > "$temp_live.name"
 
-    # Reemplazo atómico: El Master ahora solo contiene lo que respondió
-    if [ -s "$temp_live" ]; then
-        mv "$temp_live" "$MASTER_LIST"
-        echo "[DONE] Master refinado: $(wc -l < "$MASTER_LIST") resolvers vivos."
+    # 2. Ejecutamos MassDNS. Usamos -o L que es el formato más estable (IP_RESOLVER IP_RESPUESTA)
+    massdns -r "$MASTER_LIST" -t A -s "$threads" -o L "$temp_live.name" --quiet > "$temp_live.out"
+
+    # 3. Extraemos SOLO la IP del resolver (columna 1)
+    awk '{print $1}' "$temp_live.out" | sort -u > "$temp_live.final"
+
+    # 4. VALIDACIÓN CRÍTICA: Solo sobreescribir si encontramos algo
+    if [ -s "$temp_live.final" ]; then
+        mv "$temp_live.final" "$MASTER_LIST"
+        echo "[DONE] Master actualizado: $(wc -l < "$MASTER_LIST") resolvers vivos."
     else
-        echo "[-] Error: Ningún resolver respondió. Manteniendo Master previo para evitar pérdida total."
-        rm -f "$temp_live"
+        echo "[-] Error: El filtrado devolvió 0 vivos. Se mantiene la lista anterior para evitar vaciar el archivo."
     fi
+
+    # Limpieza de basura temporal
+    rm -f "$temp_live" "$temp_live.name" "$temp_live.out" "$temp_live.final"
 }
 
 # 3. Función principal (Orquestador del Collector)

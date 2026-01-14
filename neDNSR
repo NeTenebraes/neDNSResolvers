@@ -29,13 +29,12 @@ done
 [[ -z "$DOMAIN" ]] && { echo "[!] Falta dominio (-d)"; exit 1; }
 
 # --- 4. PIPELINE DE EJECUCIÓN ---
-# Aquí puedes agregar o quitar funciones de forma sencilla.
 echo "--- Iniciando Pipeline de neDNSR para: $DOMAIN ---"
 
-# Paso 1: Recolectar y limpiar la lista maestra (Viene de collector.sh)
+# Paso 1: Recolectar y limpiar la lista maestra (collector.sh)
 run_collector "$THREADS"
 
-# Paso 2: Generar salida específica para el dominio (Viene de processor.sh)
+# Paso 2: Generar salida específica para el dominio (processor.sh)
 # Esta función debería leer el Master y sacar el archivo final para el usuario
 if [ -f "$MASTER_LIST" ]; then
     finalize_target_list "$MASTER_LIST" "$DOMAIN" "trusted_resolvers.txt"
