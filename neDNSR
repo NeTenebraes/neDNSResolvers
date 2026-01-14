@@ -1,19 +1,25 @@
 #!/bin/bash
 
-# Rutas y archivos
+# --- Configuración de Rutas de Sistema ---
 BASE_DIR=$(dirname "$(readlink -f "$0")")
-MASTER_LIST="$BASE_DIR/master_resolvers.txt"
 LIB_DIR="$BASE_DIR/lib"
+MASTER_LIST="$BASE_DIR/master_resolvers.txt"
 TEMP_DIR=$(mktemp -d /tmp/neDNSR.XXXXXX)
 
-# Cargar módulos
-source "$LIB_DIR/collector.sh"
-source "$LIB_DIR/validator.sh"
+# --- CARGA DINÁMICA Y RECURSIVA DE MÓDULOS ---
+if [ -d "$LIB_DIR" ]; then
+    while IFS= read -r -d '' file; do
+        source "$file"
+    done < <(find "$LIB_DIR" -type f -name "*.sh" -print0)
+else
+    echo "[-] Error Crítico: No se encontró la carpeta de librerías en $LIB_DIR"
+    exit 1
+fi
 
-# Limpieza automática de temporales (RAM) al salir
+# Limpieza automática al salir
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
-# Valores por defecto
+# --- Lógica de Argumentos ---
 THREADS=50
 DOMAIN=""
 OUTPUT="trusted_resolvers.txt"
@@ -21,11 +27,7 @@ TOP_N=0
 
 usage() {
     echo "neDNSR - Elite Resolver Wrapper"
-    echo "Uso: ./neDNSR -d <dominio> [-t <hilos>] [-o <salida>] [-n <top_n>]"
-    echo "  -d  Dominio para validación de wildcard (Obligatorio)"
-    echo "  -t  Hilos para dnsvalidator (Def: 50)"
-    echo "  -o  Archivo de salida (Def: trusted_resolvers.txt)"
-    echo "  -n  Obtener solo los N mejores/más rápidos (Ej: 200)"
+    echo "Uso: neDNSR -d <dominio> [-t <hilos>] [-o <salida>] [-n <top_n>]"
     exit 1
 }
 
@@ -35,7 +37,7 @@ while getopts "d:t:o:n:h" opt; do
         t) THREADS=$OPTARG ;;
         o) OUTPUT=$OPTARG ;;
         n) TOP_N=$OPTARG ;;
-        h|*) usage ;;
+        *) usage ;;
     esac
 done
 
@@ -43,32 +45,33 @@ done
 
 echo "[+] Iniciando proceso para $DOMAIN..."
 
-# --- PASO 1: RECOLECCIÓN DIFERENCIAL ---
+# --- PASO 1: RECOLECCIÓN ---
 fetch_public_resolvers "$TEMP_DIR/all_raw.txt"
 
 if [ -f "$MASTER_LIST" ]; then
-    # Solo enviamos a dnsvalidator lo que NO tenemos en el Master
     comm -23 <(sort -u "$TEMP_DIR/all_raw.txt") <(sort -u "$MASTER_LIST") > "$TEMP_DIR/new_to_validate.txt"
-    echo "[+] Se omitieron $(comm -12 <(sort "$TEMP_DIR/all_raw.txt") <(sort "$MASTER_LIST") | wc -l) resolvers ya conocidos."
 else
     cp "$TEMP_DIR/all_raw.txt" "$TEMP_DIR/new_to_validate.txt"
     touch "$MASTER_LIST"
 fi
 
-# --- PASO 2: INTEGRIDAD (SOLO NOVEDADES) ---
+# --- PASO 2: INTEGRIDAD ---
 if [ -s "$TEMP_DIR/new_to_validate.txt" ]; then
     echo "[*] Validando integridad de $(wc -l < "$TEMP_DIR/new_to_validate.txt") nuevos candidatos..."
     run_integrity_check "$TEMP_DIR/new_to_validate.txt" "$THREADS" "$TEMP_DIR/new_valid.txt"
-    cat "$TEMP_DIR/new_valid.txt" >> "$MASTER_LIST"
-    sort -u "$MASTER_LIST" -o "$MASTER_LIST"
+    
+    if [ -s "$TEMP_DIR/new_valid.txt" ]; then
+        cat "$TEMP_DIR/new_valid.txt" >> "$MASTER_LIST"
+        sort -u "$MASTER_LIST" -o "$MASTER_LIST"
+    fi
 fi
 
-# --- PASO 3: PUREDNS (RANKING Y WILDCARDS) ---
-# Se procesa el MASTER_LIST completo (viejos + nuevos) contra el dominio objetivo
-run_puredns_validation "$MASTER_LIST" "$DOMAIN" "$OUTPUT" "$TOP_N"
+# --- PASO 3: RANKING Y WILDCARDS ---
+if [ -s "$MASTER_LIST" ]; then
+    run_puredns_validation "$MASTER_LIST" "$DOMAIN" "$OUTPUT" "$TOP_N"
+else
+    echo "[!] Error: No hay resolvers válidos en el Master."
+fi
 
 echo "-------------------------------------------------------"
-echo "[DONE] Proceso completado exitosamente."
-echo "[+] Base de datos Maestra: $(wc -l < "$MASTER_LIST") registros."
-echo "[+] Lista final ($OUTPUT): $(wc -l < "$OUTPUT") resolvers."
-echo "-------------------------------------------------------"
+echo "[DONE] Master: $(wc -l < "$MASTER_LIST") | Salida: $(wc -l < "$OUTPUT")"
