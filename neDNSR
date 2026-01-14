@@ -29,7 +29,6 @@ done
 
 # --- FLUJO PRINCIPAL ---
 
-
 # --- PARTE 1: RECOLECCIÓN DE NOVEDADES ---
 echo "[+] Iniciando recolección para $DOMAIN..."
     # Pasamos dónde está el Master y dónde queremos el resultado de lo nuevo
