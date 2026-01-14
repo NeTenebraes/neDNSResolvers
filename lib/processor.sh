@@ -1,5 +1,23 @@
 #!/bin/bash
 
+_filter_fast() {
+    local input=$1; local output=$2
+    echo "[*] Capa 1: Filtrado masivo (MassDNS)..." >&2
+    local tmp_raw=$(mktemp)
+    
+    # Reducimos un poco la intensidad para evitar bloqueos de red
+    echo "google.com" | massdns -r "$input" -t A -o S -w "$tmp_raw" --quiet --sndbuf 524288 --rcvbuf 524288 -s 1000
+    
+    awk '{print $5}' "$tmp_raw" | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | sort -u > "$output"
+    rm -f "$tmp_raw"
+}
+
+_validate_integrity() {
+    local input=$1; local threads=$2; local output=$3
+    echo "[*] Capa 2: Validación de integridad (DNSValidator)..."
+    dnsvalidator -threads "$threads" -tL "$input" -o "$output" --silent
+}
+
 # --- Función Pública (La que usa el orquestador) ---
 process_and_update_master() {
     local new_candidates=$1
@@ -25,22 +43,4 @@ process_and_update_master() {
     else
         echo "[-] Ningún candidato respondió a la prueba de latencia inicial."
     fi
-}
-
-
-# --- Funciones Internas ---
-_filter_fast() {
-    local input=$1; local output=$2
-    echo "[*] Capa 1: Filtrado masivo (MassDNS)..."
-    local tmp_raw=$(mktemp)
-    
-    massdns -r "$input" -t A -o S -w "$tmp_raw" --quiet --sndbuf 524288 --rcvbuf 524288 <<< "google.com"
-    awk '{print $5}' "$tmp_raw" | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | sort -u > "$output"
-    rm -f "$tmp_raw"
-}
-
-_validate_integrity() {
-    local input=$1; local threads=$2; local output=$3
-    echo "[*] Capa 2: Validación de integridad (DNSValidator)..."
-    dnsvalidator -threads "$threads" -tL "$input" -o "$output" --silent
 }
