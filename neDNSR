@@ -14,7 +14,7 @@ source "$LIB_DIR/collector.sh"
 source "$LIB_DIR/validator.sh"
 
 # Valores por defecto
-THREADS=100
+THREADS=300
 LIMIT=1000
 DOMAIN="google.com"
 OUTPUT="fast_resolvers.txt"
