@@ -1,91 +1,60 @@
 #!/bin/bash
 
-# --- Configuración de Rutas de Sistema ---
+# --- Configuración de Entorno ---
 BASE_DIR=$(dirname "$(readlink -f "$0")")
 LIB_DIR="$BASE_DIR/lib"
 MASTER_LIST="$BASE_DIR/master_resolvers.txt"
 TEMP_DIR=$(mktemp -d /tmp/neDNSR.XXXXXX)
-
-# --- CARGA DINÁMICA Y RECURSIVA DE MÓDULOS ---
-if [ -d "$LIB_DIR" ]; then
-    while IFS= read -r -d '' file; do
-        source "$file"
-    done < <(find "$LIB_DIR" -type f -name "*.sh" -print0)
-else
-    echo "[-] Error Crítico: No se encontró la carpeta de librerías en $LIB_DIR"
-    exit 1
-fi
-
-# Limpieza automática al salir
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
-# --- Lógica de Argumentos ---
-THREADS=50
-DOMAIN=""
-OUTPUT="trusted_resolvers.txt"
-TOP_N=0
+# --- Carga Dinámica de Librerías ---
+if [ -d "$LIB_DIR" ]; then
+    while IFS= read -r -d '' file; do source "$file"; done < <(find "$LIB_DIR" -type f -name "*.sh" -print0)
+else
+    echo "[-] Error: Librerías no encontradas en $LIB_DIR"; exit 1
+fi
 
-usage() {
-    echo "neDNSR - Elite Resolver Wrapper"
-    echo "Uso: neDNSR -d <dominio> [-t <hilos>] [-o <salida>] [-n <top_n>]"
-    exit 1
-}
-
+# --- Argumentos ---
+THREADS=100; DOMAIN=""; OUTPUT="trusted_resolvers.txt"; TOP_N=0
 while getopts "d:t:o:n:h" opt; do
     case $opt in
         d) DOMAIN=$OPTARG ;;
         t) THREADS=$OPTARG ;;
         o) OUTPUT=$OPTARG ;;
         n) TOP_N=$OPTARG ;;
-        *) usage ;;
+        *) echo "Uso: neDNSR -d <dominio> [-t <hilos>] [-o <salida>] [-n <top_n>]"; exit 1 ;;
     esac
 done
+[[ -z "$DOMAIN" ]] && exit 1
 
-[[ -z "$DOMAIN" ]] && usage
+# --- FLUJO PRINCIPAL ---
 
-echo "[+] Iniciando proceso para $DOMAIN..."
+echo "[+] Iniciando recolección para $DOMAIN..."
 
-# --- PASO 1: RECOLECCIÓN ---
-fetch_public_resolvers "$TEMP_DIR/all_raw.txt"
-
+# 1. Recolección de candidatos nuevos
+fetch_public_resolvers "$TEMP_DIR/raw_candidates.txt"
 if [ -f "$MASTER_LIST" ]; then
-    comm -23 <(sort -u "$TEMP_DIR/all_raw.txt") <(sort -u "$MASTER_LIST") > "$TEMP_DIR/new_to_validate.txt"
+    comm -23 <(sort -u "$TEMP_DIR/raw_candidates.txt") <(sort -u "$MASTER_LIST") > "$TEMP_DIR/only_new.txt"
 else
-    cp "$TEMP_DIR/all_raw.txt" "$TEMP_DIR/new_to_validate.txt"
-    touch "$MASTER_LIST"
+    cp "$TEMP_DIR/raw_candidates.txt" "$TEMP_DIR/only_new.txt"
 fi
 
-# --- PASO 2: INTEGRIDAD ---
-if [ -s "$TEMP_DIR/new_to_validate.txt" ]; then
-    echo "[*] Validando integridad de $(wc -l < "$TEMP_DIR/new_to_validate.txt") nuevos candidatos..."
-    run_integrity_check "$TEMP_DIR/new_to_validate.txt" "$THREADS" "$TEMP_DIR/new_valid.txt"
+# 2. Procesamiento por capas (Solo si hay candidatos nuevos)
+if [ -s "$TEMP_DIR/only_new.txt" ]; then
+    filter_fast_responders "$TEMP_DIR/only_new.txt" "$TEMP_DIR/survivors.txt"
     
-    if [ -s "$TEMP_DIR/new_valid.txt" ]; then
-        cat "$TEMP_DIR/new_valid.txt" >> "$MASTER_LIST"
-        sort -u "$MASTER_LIST" -o "$MASTER_LIST"
+    if [ -s "$TEMP_DIR/survivors.txt" ]; then
+        validate_integrity "$TEMP_DIR/survivors.txt" "$THREADS" "$TEMP_DIR/verified.txt"
+        update_master "$TEMP_DIR/verified.txt" "$MASTER_LIST"
     fi
 fi
 
-# --- PASO 3: RANKING Y WILDCARDS ---
+# 3. Generación de resultados para el dominio específico
 if [ -s "$MASTER_LIST" ]; then
-    # Ejecutamos la validación
     run_puredns_validation "$MASTER_LIST" "$DOMAIN" "$OUTPUT" "$TOP_N"
-    
-    # VERIFICACIÓN REAL DE INTEGRIDAD DE SALIDA
-    # Solo contamos si el archivo existe y tiene formato de IP
     FINAL_COUNT=$(grep -cE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" "$OUTPUT" 2>/dev/null || echo 0)
+    echo "-------------------------------------------------------"
+    echo "[DONE] Master: $(wc -l < "$MASTER_LIST") | Salida: $FINAL_COUNT"
 else
-    echo -e "\n[!] Error: El Master está vacío. No hay nada que procesar."
-    FINAL_COUNT=0
+    echo "[-] Error: No hay resolvers disponibles."
 fi
-
-# --- RESULTADOS FINALES ---
-echo "-------------------------------------------------------"
-echo -e "[+] Estado del Master: $(wc -l < "$MASTER_LIST" 2>/dev/null || echo 0) resolvers guardados."
-if [ "$FINAL_COUNT" -gt 0 ]; then
-    echo -e "[+] Lista de salida: $FINAL_COUNT resolvers listos en '$OUTPUT'."
-else
-    echo -e "[-] No se generaron resultados válidos en esta sesión."
-    rm -f "$OUTPUT" # Limpiamos el archivo si está vacío o corrupto
-fi
-echo "-------------------------------------------------------"
