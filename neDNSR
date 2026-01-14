@@ -28,17 +28,11 @@ done
 [[ -z "$DOMAIN" ]] && exit 1
 
 # --- FLUJO PRINCIPAL ---
-
 # --- PARTE 1: RECOLECCIÓN DE NOVEDADES ---
 echo "[+] Iniciando recolección para $DOMAIN..."
     # Pasamos dónde está el Master y dónde queremos el resultado de lo nuevo
-    fetch_new_candidates "$MASTER_LIST" "$TEMP_DIR/only_new.txt"
+    fetch_RAW "$MASTER_LIST" "$TEMP_DIR/only_new.txt"
 
-# --- PARTE 2: PROCESAMIENTO POR CAPAS ---
-# Solo llamamos a la función si el colector realmente dejó algo nuevo
-if [ -s "$TEMP_DIR/only_new.txt" ]; then
-    process_and_update_master "$TEMP_DIR/only_new.txt" "$MASTER_LIST" "$THREADS" "$TEMP_DIR"
-fi
 
 # --- PARTE 3: GENERACIÓN DE RESULTADOS ---
 if [ -s "$MASTER_LIST" ]; then

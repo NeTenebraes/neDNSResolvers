@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Función para descargar y filtrar candidatos únicos que no están en el Master
-fetch_new_candidates() {
+fetch_RAW() {
     local master_file=$1
     local output_file=$2
     local temp_raw=$(mktemp)

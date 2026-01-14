@@ -1,43 +1,46 @@
 #!/bin/bash
 
-_validate_integrity() {
-    local input=$1; local threads=$2; local output=$3
-    echo "[*] Capa 2: Validación de integridad (DNSValidator)..."
-    dnsvalidator -threads "$threads" -tL "$input" -o "$output" --silent
-}
-
+# Capa 1: Filtrado rápido de supervivencia
+# Captura IPs activas sin que las estadísticas de MassDNS ensucien la salida
 _filter_fast() {
     local input=$1
     local output=$2
-    echo "[*] Capa 1: Filtrado masivo (MassDNS)..." >&2
-    local tmp_raw=$(mktemp)
     
-    # Aseguramos que el dominio se pase correctamente y bajamos la tasa de paquetes (-s) 
-    # para evitar que el firewall del VPS bloquee la salida masiva
-    echo "google.com" | massdns -r "$input" -t A -o S -w "$tmp_raw" --quiet -s 1000
-    
-    # Extraer IPs únicas
-    awk '{print $5}' "$tmp_raw" | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | sort -u > "$output"
-    rm -f "$tmp_raw"
+    # --quiet: Fundamental para que el conteo no falle
+    # -s 500: Balance entre velocidad y estabilidad
+    massdns -r "$input" -t A -o S -s 500 --quiet <<< "google.com" | \
+    awk '{print $NF}' | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | sort -u > "$output"
 }
 
+# Orquestador del procesamiento de nuevos candidatos
 process_and_update_master() {
-    local new_candidates=$1
+    local only_new=$1
     local master=$2
     local threads=$3
     local temp_dir=$4
+    local survivors="$temp_dir/survivors.txt"
+    local verified="$temp_dir/verified.txt"
 
-    _filter_fast "$new_candidates" "$temp_dir/survivors.txt"
+    # Ejecuta el filtrado inicial
+    _filter_fast "$only_new" "$survivors"
 
-    if [ -s "$temp_dir/survivors.txt" ]; then
-        validate_integrity "$temp_dir/survivors.txt" "$threads" "$temp_dir/verified.txt"
+    # Verifica si el archivo de sobrevivientes tiene contenido
+    if [ -s "$survivors" ]; then
+        local count_s=$(wc -l < "$survivors")
+        echo "[+] $count_s candidatos vivos. Iniciando validación profunda (DNSValidator)..."
         
-        if [ -s "$temp_dir/verified.txt" ]; then
-            cat "$temp_dir/verified.txt" >> "$master"
+        # Capa 2: DNSValidator (Elimina Wildcards y basura técnica)
+        # Usamos la ruta absoluta al binario que instalamos en /opt
+        /usr/local/bin/dnsvalidator -threads "$threads" -tL "$survivors" -o "$verified" --silent
+        
+        if [ -s "$verified" ]; then
+            cat "$verified" >> "$master"
             sort -u "$master" -o "$master"
-            echo "[+] Master actualizado: $(wc -l < "$master")" >&2
+            echo "[DONE] Master actualizado. Total de resolvers: $(wc -l < "$master")"
+        else
+            echo "[!] DNSValidator filtró todos los candidatos (posibles falsos positivos)."
         fi
     else
-        echo "[-] Ningún candidato respondió a la prueba de latencia inicial." >&2
+        echo "[-] Ningún candidato respondió a la prueba de latencia inicial en Capa 1."
     fi
 }
