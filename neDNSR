@@ -28,15 +28,23 @@ done
 [[ -z "$DOMAIN" ]] && exit 1
 
 # --- FLUJO PRINCIPAL ---
+
 # --- PARTE 1: RECOLECCIÓN DE NOVEDADES ---
 echo "[+] Iniciando recolección para $DOMAIN..."
-    # Pasamos dónde está el Master y dónde queremos el resultado de lo nuevo
-    fetch_RAW "$MASTER_LIST" "$TEMP_DIR/only_new.txt"
+fetch_RAW "$MASTER_LIST" "$TEMP_DIR/only_new.txt"
 
+# --- PARTE 2: VALIDACIÓN E INSERCIÓN (ESTO TE FALTABA) ---
+if [ -s "$TEMP_DIR/only_new.txt" ]; then
+    echo "[*] Capa 1: Filtrado masivo (MassDNS)..."
+    process_and_update_master "$TEMP_DIR/only_new.txt" "$MASTER_LIST" "$THREADS" "$TEMP_DIR"
+else
+    echo "[*] No hay candidatos nuevos que procesar."
+fi
 
 # --- PARTE 3: GENERACIÓN DE RESULTADOS ---
+# Eliminamos el 'exit 1' agresivo para que si el Master está vacío, 
+# intente al menos informar por qué.
 if [ -s "$MASTER_LIST" ]; then
-    # Llamamos a la función y capturamos el conteo final
     FINAL_COUNT=$(finalize_target_list "$MASTER_LIST" "$DOMAIN" "$OUTPUT" "$TOP_N")
     
     echo "-------------------------------------------------------"
@@ -48,6 +56,6 @@ if [ -s "$MASTER_LIST" ]; then
     fi
     echo "-------------------------------------------------------"
 else
-    echo "[-] Error Crítico: El Master List está vacío. Ejecución abortada."
+    echo "[-] Error: El Master List sigue vacío después del procesamiento."
     exit 1
 fi
