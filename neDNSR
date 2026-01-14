@@ -68,10 +68,24 @@ fi
 
 # --- PASO 3: RANKING Y WILDCARDS ---
 if [ -s "$MASTER_LIST" ]; then
+    # Ejecutamos la validación
     run_puredns_validation "$MASTER_LIST" "$DOMAIN" "$OUTPUT" "$TOP_N"
+    
+    # VERIFICACIÓN REAL DE INTEGRIDAD DE SALIDA
+    # Solo contamos si el archivo existe y tiene formato de IP
+    FINAL_COUNT=$(grep -cE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" "$OUTPUT" 2>/dev/null || echo 0)
 else
-    echo "[!] Error: No hay resolvers válidos en el Master."
+    echo -e "\n[!] Error: El Master está vacío. No hay nada que procesar."
+    FINAL_COUNT=0
 fi
 
+# --- RESULTADOS FINALES ---
 echo "-------------------------------------------------------"
-echo "[DONE] Master: $(wc -l < "$MASTER_LIST") | Salida: $(wc -l < "$OUTPUT")"
+echo -e "[+] Estado del Master: $(wc -l < "$MASTER_LIST" 2>/dev/null || echo 0) resolvers guardados."
+if [ "$FINAL_COUNT" -gt 0 ]; then
+    echo -e "[+] Lista de salida: $FINAL_COUNT resolvers listos en '$OUTPUT'."
+else
+    echo -e "[-] No se generaron resultados válidos en esta sesión."
+    rm -f "$OUTPUT" # Limpiamos el archivo si está vacío o corrupto
+fi
+echo "-------------------------------------------------------"
