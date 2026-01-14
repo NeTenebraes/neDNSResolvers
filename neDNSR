@@ -1,43 +1,55 @@
 #!/bin/bash
+# /opt/neDNSR/neDNSR
 
-# --- 1. Entorno y Rutas ---
 BASE_DIR="/opt/neDNSR"
-LIB_DIR="$BASE_DIR/lib"
 MASTER_LIST="$BASE_DIR/master_resolvers.txt"
+LIB_DIR="$BASE_DIR/lib"
+DNS_VENV="$LIB_DIR/dns_env/bin/dnsvalidator" 
 
-# --- 2. Carga Dinámica de Módulos ---
-# Esto importa automáticamente collector.sh, processor.sh, etc.
-if [ -d "$LIB_DIR" ]; then
-    for module in "$LIB_DIR"/*.sh; do
-        source "$module"
-    done
-else
-    echo "[-] Error: No se encontró la carpeta de librerías: $LIB_DIR"; exit 1
-fi
+source "$LIB_DIR/collector.sh"
+source "$LIB_DIR/validator.sh"
 
-# --- 3. Gestión de Argumentos ---
+# Valores por defecto
 THREADS=100
-DOMAIN=""
-while getopts "d:t:h" opt; do
+LIMIT=1000
+DOMAIN="google.com"
+OUTPUT="fast_resolvers.txt"
+
+usage() {
+    echo "Uso: neDNSR -d <dominio> [-t <hilos>] [-l <limite>] [-o <archivo>]"
+    echo "  -d: Dominio para el benchmark (Ej: target.com)"
+    echo "  -l: Top N DNS rápidos a filtrar (Ej: 100 o 1000)"
+    echo "  -t: Hilos para validación y benchmark"
+    exit 1
+}
+
+while getopts "d:t:l:o:" opt; do
     case $opt in
         d) DOMAIN=$OPTARG ;;
         t) THREADS=$OPTARG ;;
-        *) echo "Uso: neDNSR -d <dominio> [-t <pps>]"; exit 1 ;;
+        l) LIMIT=$OPTARG ;;
+        o) OUTPUT=$OPTARG ;;
+        *) usage ;;
     esac
 done
 
-[[ -z "$DOMAIN" ]] && { echo "[!] Falta dominio (-d)"; exit 1; }
+[[ -z "$DOMAIN" ]] && usage
 
-# --- 4. PIPELINE DE EJECUCIÓN ---
-echo "--- Iniciando Pipeline de neDNSR para: $DOMAIN ---"
+# PASO 1: Recolectar de fuentes públicas
+fetch_and_merge 
 
-# Paso 1: Recolectar y limpiar la lista maestra (collector.sh)
-run_collector "$THREADS"
+# PASO 2: Validación de Integridad (DNSValidator)
+# Filtra resolvers que están caídos o dan respuestas falsas (spoofing)
+echo "[*] Ejecutando DNSValidator sobre la lista maestra..." >&2
+TMP_VALIDATED=$(mktemp)
+$DNS_VENV -tL "$MASTER_LIST" -threads "$THREADS" -o "$TMP_VALIDATED" >/dev/null 2>&1
 
-# Paso 2: Generar salida específica para el dominio (processor.sh)
-# Esta función debería leer el Master y sacar el archivo final para el usuario
-if [ -f "$MASTER_LIST" ]; then
-    finalize_target_list "$MASTER_LIST" "$DOMAIN" "trusted_resolvers.txt"
-fi
+# PASO 3: Ranking por Latencia y Filtro Final
+# Solo los que pasaron DNSValidator entran al benchmark de velocidad
+COUNT=$(measure_and_rank "$TMP_VALIDATED" "$OUTPUT" "$LIMIT" "$THREADS" "$DOMAIN")
 
-echo "--- Pipeline Finalizado ---"
+echo -e "\n[+] Proceso finalizado exitosamente."
+echo "[+] DNS Validados y Rápidos: $COUNT"
+echo "[+] Resultados guardados en: $OUTPUT"
+
+rm -f "$TMP_VALIDATED"

@@ -1,28 +1,29 @@
 #!/bin/bash
+# /opt/neDNSR/lib/validator.sh
 
-finalize_target_list() {
-    local master=$1
-    local domain=$2
-    local final_output=$3
-    local limit=$4
-    local tmp_ranked=$(mktemp)
+measure_and_rank() {
+    local input=$1
+    local output=$2
+    local limit=$3
+    local threads=$4
+    local target=$5
+    local tmp_bench=$(mktemp)
 
-    # Enviamos los mensajes informativos al canal de errores (stderr) para que no ensucien la variable
-    echo "[*] Midiendo latencia y filtrando wildcards para: $domain" >&2
+    echo "[*] Rankeando Top $limit resolvers más rápidos para $target..." >&2
+
+    # Benchmark paralelo: mide tiempo de respuesta real
+    cat "$input" | xargs -P "$threads" -I {} sh -c '
+        # Extraemos el Query time en ms usando dig
+        ms=$(dig @{} '$target' +tries=1 +timeout=1 | grep "Query time" | awk "{print \$4}")
+        if [ ! -z "$ms" ]; then
+            echo "$ms {}"
+        fi
+    ' > "$tmp_bench"
+
+    # Ordenar: Menor latencia primero -> Tomar el límite -> Limpiar para dejar solo la IP
+    sort -n "$tmp_bench" | head -n "$limit" | awk '{print $2}' > "$output"
     
-    # CORRECCIÓN PUREDNS: Usar stdin para un solo dominio
-    echo "$domain" | puredns resolve -r "$master" --quiet > "$tmp_ranked"
-
-    if [ "$limit" -gt 0 ] && [ -s "$tmp_ranked" ]; then
-        head -n "$limit" "$tmp_ranked" > "$final_output"
-    else
-        cat "$tmp_ranked" > "$final_output"
-    fi
-
-    # Contamos de forma silenciosa
-    local count=$(grep -cE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" "$final_output" 2>/dev/null || echo 0)
-    rm -f "$tmp_ranked"
-    
-    # Única salida al canal estándar (stdout): el número puro
-    echo "$count"
+    local final_count=$(wc -l < "$output")
+    rm -f "$tmp_bench"
+    echo "$final_count"
 }
