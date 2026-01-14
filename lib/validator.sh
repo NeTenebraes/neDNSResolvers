@@ -1,23 +1,32 @@
 #!/bin/bash
 
-run_integrity_check() {
-    local input=$1; local threads=$2; local output=$3
-    dnsvalidator -threads "$threads" -tL "$input" -o "$output" --silent
-}
+# Función para filtrar por latencia y descartar wildcards
+# Uso: finalize_target_list "$MASTER_LIST" "$DOMAIN" "$OUTPUT" "$TOP_N"
+finalize_target_list() {
+    local master=$1
+    local domain=$2
+    local final_output=$3
+    local limit=$4
+    local tmp_ranked=$(mktemp)
 
-run_puredns_validation() {
-    local master=$1; local domain=$2; local final_output=$3; local limit=$4
-    local tmp_ranked=$(mktemp /tmp/ranked.XXXXXX)
-
-    echo "[*] Filtrando wildcards y midiendo latencia para: $domain"
+    echo "[*] Midiendo latencia y filtrando wildcards para: $domain"
     
-    # Sintaxis corregida para puredns
-    puredns resolve -r "$master" --quiet <<< "$domain" > "$tmp_ranked"
+    # 1. Resolución y Ranking con PureDNS
+    # Usamos resolve para verificar que los resolvers del Master responden al target
+    puredns resolve "$domain" -r "$master" --quiet > "$tmp_ranked"
 
-    if [ "$limit" -gt 0 ]; then
+    # 2. Aplicar límite (TOP N) si se solicita
+    if [ "$limit" -gt 0 ] && [ -s "$tmp_ranked" ]; then
         head -n "$limit" "$tmp_ranked" > "$final_output"
     else
-        mv "$tmp_ranked" "$final_output"
+        cat "$tmp_ranked" > "$final_output"
     fi
+
+    # 3. Verificación de integridad de la salida (Conteo Real)
+    local count=$(grep -cE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" "$final_output" 2>/dev/null || echo 0)
+    
     rm -f "$tmp_ranked"
+    
+    # Retornamos el conteo para que el orquestador lo use
+    echo "$count"
 }

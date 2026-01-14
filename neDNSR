@@ -29,32 +29,32 @@ done
 
 # --- FLUJO PRINCIPAL ---
 
+
+# --- PARTE 1: RECOLECCIÓN DE NOVEDADES ---
 echo "[+] Iniciando recolección para $DOMAIN..."
+    # Pasamos dónde está el Master y dónde queremos el resultado de lo nuevo
+    fetch_new_candidates "$MASTER_LIST" "$TEMP_DIR/only_new.txt"
 
-# 1. Recolección de candidatos nuevos
-fetch_public_resolvers "$TEMP_DIR/raw_candidates.txt"
-if [ -f "$MASTER_LIST" ]; then
-    comm -23 <(sort -u "$TEMP_DIR/raw_candidates.txt") <(sort -u "$MASTER_LIST") > "$TEMP_DIR/only_new.txt"
-else
-    cp "$TEMP_DIR/raw_candidates.txt" "$TEMP_DIR/only_new.txt"
-fi
-
-# 2. Procesamiento por capas (Solo si hay candidatos nuevos)
+# --- PARTE 2: PROCESAMIENTO POR CAPAS ---
+# Solo llamamos a la función si el colector realmente dejó algo nuevo
 if [ -s "$TEMP_DIR/only_new.txt" ]; then
-    filter_fast_responders "$TEMP_DIR/only_new.txt" "$TEMP_DIR/survivors.txt"
-    
-    if [ -s "$TEMP_DIR/survivors.txt" ]; then
-        validate_integrity "$TEMP_DIR/survivors.txt" "$THREADS" "$TEMP_DIR/verified.txt"
-        update_master "$TEMP_DIR/verified.txt" "$MASTER_LIST"
-    fi
+    process_and_update_master "$TEMP_DIR/only_new.txt" "$MASTER_LIST" "$THREADS" "$TEMP_DIR"
 fi
 
-# 3. Generación de resultados para el dominio específico
+# --- PARTE 3: GENERACIÓN DE RESULTADOS ---
 if [ -s "$MASTER_LIST" ]; then
-    run_puredns_validation "$MASTER_LIST" "$DOMAIN" "$OUTPUT" "$TOP_N"
-    FINAL_COUNT=$(grep -cE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" "$OUTPUT" 2>/dev/null || echo 0)
+    # Llamamos a la función y capturamos el conteo final
+    FINAL_COUNT=$(finalize_target_list "$MASTER_LIST" "$DOMAIN" "$OUTPUT" "$TOP_N")
+    
     echo "-------------------------------------------------------"
-    echo "[DONE] Master: $(wc -l < "$MASTER_LIST") | Salida: $FINAL_COUNT"
+    if [ "$FINAL_COUNT" -gt 0 ]; then
+        echo -e "[DONE] Master: $(wc -l < "$MASTER_LIST") | Salida: $FINAL_COUNT ($OUTPUT)"
+    else
+        echo -e "[!] Advertencia: No se obtuvieron resolvers válidos para $DOMAIN"
+        rm -f "$OUTPUT"
+    fi
+    echo "-------------------------------------------------------"
 else
-    echo "[-] Error: No hay resolvers disponibles."
+    echo "[-] Error Crítico: El Master List está vacío. Ejecución abortada."
+    exit 1
 fi
