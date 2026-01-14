@@ -9,6 +9,8 @@ DNS_VENV="$LIB_DIR/dns_env/bin/dnsvalidator"
 source "$LIB_DIR/collector.sh"
 source "$LIB_DIR/validator.sh"
 
+trap cleanup SIGINT SIGTERM
+
 # Valores por defecto
 THREADS=100
 LIMIT=1000
@@ -42,7 +44,7 @@ fetch_and_merge
 # Filtra resolvers que están caídos o dan respuestas falsas (spoofing)
 echo "[*] Ejecutando DNSValidator sobre la lista maestra..." >&2
 TMP_VALIDATED=$(mktemp)
-$DNS_VENV -tL "$MASTER_LIST" -threads "$THREADS" -o "$TMP_VALIDATED" >/dev/null 2>&1
+$DNS_VENV -tL "$MASTER_LIST" -threads "$THREADS" -o "$TMP_VALIDATED"
 
 # PASO 3: Ranking por Latencia y Filtro Final
 # Solo los que pasaron DNSValidator entran al benchmark de velocidad

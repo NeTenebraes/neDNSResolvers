@@ -9,7 +9,6 @@ process_and_finalize() {
     echo "[*] Filtrando resolvers (Latencia < 500ms y Sin Wildcards)..." >&2
 
     # puredns hace el trabajo de massdns + validación de wildcards de forma nativa
-    # --rate limita los paquetes para no saturar
     puredns resolve "$domain" -r "$master" --rate "$threads" --quiet > "$output"
 
     if [ -s "$output" ]; then
