@@ -3,6 +3,7 @@
 
 update_master_raw() {
     log_status "Actualizando base RAW desde fuentes externas..."
+    # Añadimos a RAW con >> y limpiamos duplicados
     curl -sL https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt \
              https://public-dns.info/nameservers.txt | \
     tr -d '\r' | grep -E "^([0-9]{1,3}\.){3}[0-9]{1,3}$" | \
@@ -14,30 +15,48 @@ update_master_raw() {
 
 validate_raw_to_live() {
     local threads=$1
-    log_status "Pre-filtrado Masscan sobre RAW para descartar muertos..."
+    log_status "Filtrando RAW para encontrar nuevas IPs candidatas..."
     
     local tmp_vivos=$(mktemp)
-    # Masscan a 10k de rate para limpiar el RAW rápido
-    sudo masscan -iL "$RAW_FILE" -p53 --rate 10000 --wait 0 2>/dev/null | awk '{print $6}' | sort -u > "$tmp_vivos"
-    
-    local cant_vivos=$(wc -l < "$tmp_vivos")
-    log_status "Supervivientes: $cant_vivos. Iniciando DNSValidator (Poisoning Check)..."
+    local tmp_new_to_validate=$(mktemp)
+    local tmp_validated=$(mktemp)
 
-    if [ "$cant_vivos" -gt 0 ]; then
-        # Solo pasamos dnsvalidator a lo que masscan marcó como vivo
-        dnsvalidator -tL "$tmp_vivos" -threads "$threads" -o "$LIVE_FILE"
-        touch "$LIVE_FILE"
-        echo -e "    \e[32m✔\e[0m LIVE actualizado: \e[1m$(wc -l < "$LIVE_FILE")\e[0m IPs seguras."
+    # 1. Sacamos los que están vivos actualmente en RAW
+    sudo masscan -iL "$RAW_FILE" -p53 --rate 10000 --wait 0 2>/dev/null | awk '{print $6}' | sort -u > "$tmp_vivos"
+
+    # 2. ABSTRACCIÓN: Solo validamos los que están vivos PERO que no están ya en LIVE
+    if [[ -f "$LIVE_FILE" ]]; then
+        # comm -23 extrae líneas que están en tmp_vivos pero NO en LIVE_FILE
+        comm -23 "$tmp_vivos" <(sort "$LIVE_FILE") > "$tmp_new_to_validate"
     else
-        echo -e "    \e[31m[!]\e[0m No se detectaron IPs vivas para validar."
+        cat "$tmp_vivos" > "$tmp_new_to_validate"
     fi
-    rm -f "$tmp_vivos"
+
+    local cant_new=$(wc -l < "$tmp_new_to_validate")
+    
+    if [ "$cant_new" -gt 0 ]; then
+        log_status "Validando $cant_new nuevas IPs con DNSValidator..."
+        dnsvalidator -tL "$tmp_new_to_validate" -threads "$threads" -o "$tmp_validated"
+        
+        # 3. Añadimos lo nuevo al LIVE acumulativo
+        cat "$tmp_validated" >> "$LIVE_FILE"
+        sort -u "$LIVE_FILE" -o "$LIVE_FILE"
+        echo -e "    \e[32m✔\e[0m LIVE actualizado. Total acumulado: \e[1m$(wc -l < "$LIVE_FILE")\e[0m IPs."
+    else
+        echo -e "    \e[1;33m[!]\e[0m No hay IPs nuevas que validar para LIVE."
+    fi
+
+    rm -f "$tmp_vivos" "$tmp_new_to_validate" "$tmp_validated"
 }
 
 clean_live_logic() {
-    log_status "Saneando lista LIVE (Check rápido de supervivencia)..."
+    log_status "Saneando lista LIVE (Eliminando caídos)..."
+    [[ ! -f "$LIVE_FILE" ]] && return
+    
     local tmp_alive=$(mktemp)
+    # Re-escaneo de LIVE para asegurar que siguen ahí
     sudo masscan -iL "$LIVE_FILE" -p53 --rate 10000 --wait 0 2>/dev/null | awk '{print $6}' | sort -u > "$tmp_alive"
+    
     mv "$tmp_alive" "$LIVE_FILE"
-    echo -e "    \e[32m✔\e[0m LIVE activo: \e[1m$(wc -l < "$LIVE_FILE")\e[0m"
+    echo -e "    \e[32m✔\e[0m LIVE activo y real: \e[1m$(wc -l < "$LIVE_FILE")\e[0m"
 }
