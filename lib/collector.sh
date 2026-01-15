@@ -16,35 +16,39 @@ update_master_raw() {
 
 validate_raw_to_live() {
     local threads=$1
+    log_status "Comparando RAW contra LIVE para buscar novedades..."
+    
     local tmp_vivos=$(mktemp)
-    local tmp_new=$(mktemp)
-    local tmp_val=$(mktemp) # Temporal para dnsvalidator
+    local tmp_new_to_validate=$(mktemp)
+    local tmp_validated=$(mktemp)
 
-    log_status "Paso 1: Detectando IPs vivas en RAW..."
+    # 1. Ver quién está vivo en el RAW acumulado
     sudo masscan -iL "$RAW_FILE" -p53 --rate 10000 --wait 0 2>/dev/null | awk '{print $6}' | sort -u > "$tmp_vivos"
 
-    log_status "Paso 2: Filtrando novedades..."
+    # 2. FILTRO CRUCIAL: Solo validar lo que NO tenemos en LIVE
     if [[ -s "$LIVE_FILE" ]]; then
-        grep -F -v -x -f "$LIVE_FILE" "$tmp_vivos" > "$tmp_new"
+        # Extraer IPs de tmp_vivos que NO están en LIVE_FILE
+        grep -F -v -f "$LIVE_FILE" "$tmp_vivos" > "$tmp_new_to_validate"
     else
-        cat "$tmp_vivos" > "$tmp_new"
+        cat "$tmp_vivos" > "$tmp_new_to_validate"
     fi
 
-    local n_nuevos=$(wc -l < "$tmp_new")
-    if [ "$n_nuevos" -gt 0 ]; then
-        log_status "Paso 3: Validando $n_nuevos IPs (Presiona Ctrl+C si quieres saltar al benchmark)..."
+    local cant_new=$(wc -l < "$tmp_new_to_validate")
+    
+    if [ "$cant_new" -gt 0 ]; then
+        log_status "Validando $cant_new IPs nuevas detectadas..."
+        # Validamos a un temporal, NO al LIVE directamente para no borrarlo
+        dnsvalidator -tL "$tmp_new_to_validate" -threads "$threads" -o "$tmp_validated"
         
-        # Ejecutamos dnsvalidator
-        dnsvalidator -tL "$tmp_new" -threads "$threads" -o "$tmp_val"
-        
-        # SOLO si dnsvalidator terminó y soltó datos, los movemos a LIVE
-        if [[ -s "$tmp_val" ]]; then
-            cat "$tmp_val" >> "$LIVE_FILE"
-            sort -u "$LIVE_FILE" -o "$LIVE_FILE"
-            log_status "Nuevas IPs guardadas en LIVE."
-        fi
+        # 3. ANEXAR (>>), no sobrescribir
+        cat "$tmp_validated" >> "$LIVE_FILE"
+        sort -u "$LIVE_FILE" -o "$LIVE_FILE"
+        echo -e "    \e[32m✔\e[0m Se añadieron $(wc -l < "$tmp_validated") nuevos servidores a LIVE."
+    else
+        echo -e "    \e[1;33m[!]\e[0m No hay IPs nuevas; tu lista LIVE ya está al día."
     fi
-    rm -f "$tmp_vivos" "$tmp_new" "$tmp_val"
+
+    rm -f "$tmp_vivos" "$tmp_new_to_validate" "$tmp_validated"
 }
 
 clean_live_logic() {
