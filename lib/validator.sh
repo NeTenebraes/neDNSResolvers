@@ -8,30 +8,29 @@ measure_and_rank() {
 
     log_status "Iniciando ranking con $threads hilos para $target..."
 
-    # Procesamos las IPs. Usamos printf para evitar problemas con echo -e
+    # 1. Benchmark: Aseguramos que el output sea "MS IP" sin basura
     cat "$input" | sort -u | xargs -P "$threads" -I {} sh -c "
         ms=\$(dig @{} $target +tries=1 +timeout=1 | grep 'Query time' | awk '{print \$4}')
-        if [ ! -z \"\$ms\" ]; then
-            # Esto imprime SOLO en la pantalla del usuario, con colores
+        if [ ! -z \"\$ms\" ] && [ \"\$ms\" -gt 0 ]; then
             printf \"\e[32m[+]\e[0m {} | \${ms}ms\n\" > /dev/tty
-            
-            # Esto guarda los datos para procesar en el archivo temporal
             echo \"\$ms {}\"
         fi
     " > "$tmp_bench"
 
-    # Lógica de guardado final (Solo las IPs, ordenadas por velocidad)
+    # 2. El truco: Usar 'sort -g' (general numeric) y limpiar el output
+    # Filtramos líneas vacías y ordenamos por la primera columna numéricamente
     if [[ "$limit" == "all" ]]; then
-        sort -n "$tmp_bench" | awk '{print $2}' > "$output"
+        sort -g "$tmp_bench" | awk '{print $2}' | grep -v '^$' > "$output"
     else
-        sort -n "$tmp_bench" | head -n "$limit" | awk '{print $2}' > "$output"
+        sort -g "$tmp_bench" | head -n "$limit" | awk '{print $2}' | grep -v '^$' > "$output"
     fi
     
-    # Limpieza de duplicados final en el output por si las moscas
-    sort -u "$output" -o "$output"
-    
+    # DEBUG: Verificamos los 3 mejores en pantalla
+    echo -e "\n\e[1;33m[!] Verificando los 3 mejores:\e[0m"
+    head -n 3 "$output"
+
     local final_count=$(wc -l < "$output")
-    echo -e "\n\e[1;32m[✔]\e[0m Ranking finalizado. Se han guardado $final_count IPs únicas en $output"
+    echo -e "\n\e[1;32m[✔]\e[0m Ranking finalizado. Se guardaron $final_count IPs."
     
     rm -f "$tmp_bench"
 }
