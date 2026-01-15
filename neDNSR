@@ -47,6 +47,20 @@ done
 
 # --- FLUJO DE TRABAJO ---
 
+# Debug de rutas (Añade esto temporalmente)
+echo "[DEBUG] Buscando LIVE en: $LIVE_FILE"
+if [[ -f "$LIVE_FILE" ]]; then
+    echo "[DEBUG] LIVE detectado. Tamaño: $(wc -l < "$LIVE_FILE")"
+else
+    echo "[DEBUG] LIVE NO detectado. Iniciando actualización forzosa."
+fi
+
+# Tu lógica actual corregida
+if [[ ! -f "$LIVE_FILE" ]] || [[ "$UPDATE_MODE" == true ]]; then
+    update_master_raw
+    validate_raw_to_live "$THREADS"
+fi
+
 # 1. Ingesta y Validación (Solo si no hay LIVE o se pide --update)
 if [[ ! -f "$LIVE_FILE" ]] || [[ "$UPDATE_MODE" == true ]]; then
     update_master_raw
