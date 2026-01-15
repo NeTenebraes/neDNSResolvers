@@ -5,7 +5,6 @@ BASE_DIR="/opt/neDNSR"
 LIB_DIR="$BASE_DIR/lib"
 RAW_FILE="$BASE_DIR/RAW.txt"
 LIVE_FILE="$BASE_DIR/LIVE.txt"
-DATE_FILE="$BASE_DIR/LIVE.date"
 
 source "$LIB_DIR/helpers.sh"
 source "$LIB_DIR/collector.sh"
@@ -15,42 +14,47 @@ trap cleanup SIGINT SIGTERM
 
 # Valores por defecto
 THREADS=300
-LIMIT="all" # Por defecto infinito/todo
+LIMIT="all"
 UPDATE_MODE=false
+DEFAULT_OUTPUT="resolvers_$(date +%Y%m%d_%H%M).txt"
+OUTPUT=""
 
 usage() {
-    echo -e "Uso: neDNSR -d <dominio> [-o <archivo>] [-top <numero>] [--update]"
+    echo -e "Uso: neDNSR -d <dominio> [-o <archivo>] [-t <hilos>] [-top <numero>] [--update]"
     echo -e "  -d    : Dominio para el benchmark (ej: google.com)"
-    echo -e "  -o    : Archivo de salida (default: fast_resolvers.txt)"
-    echo -e "  -top  : Número de mejores DNS a filtrar (default: todos)"
-    echo -e "  --update : Ingesta nuevas fuentes y valida hacia LIVE"
+    echo -e "  -o    : Archivo de salida (default: resolvers_FECHA_HORA.txt)"
+    echo -e "  -t    : Número de hilos/concurrencia (default: 300)"
+    echo -e "  -top  : Cantidad de mejores DNS a filtrar (default: todos los vivos)"
+    echo -e "  --update : Ingesta nuevas fuentes y re-valida integridad (RAW -> LIVE)"
     exit 1
 }
 
-# Procesar argumentos manualmente para soportar -top
+# Procesar argumentos
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -d) DOMAIN="$2"; shift ;;
         -o) OUTPUT="$2"; shift ;;
+        -t|-threads) THREADS="$2"; shift ;;
         -top) LIMIT="$2"; shift ;;
         --update) UPDATE_MODE=true ;;
-        -h|--help) usage ;;
-        *) echo "Opción desconocida: $1"; usage ;;
+        *) usage ;;
     esac
     shift
 done
 
 [[ -z "$DOMAIN" ]] && usage
-[[ -z "$OUTPUT" ]] && OUTPUT="fast_resolvers.txt"
+[[ -z "$OUTPUT" ]] && OUTPUT="$DEFAULT_OUTPUT"
 
-# --- LÓGICA DE DOS CAPAS ---
+# --- FLUJO DE TRABAJO ---
 
+# 1. Ingesta y Validación (Solo si no hay LIVE o se pide --update)
 if [[ ! -f "$LIVE_FILE" ]] || [[ "$UPDATE_MODE" == true ]]; then
     update_master_raw
     validate_raw_to_live "$THREADS"
 fi
 
+# 2. Saneamiento de supervivencia (Siempre se hace para limpiar LIVE antes del benchmark)
 clean_live_logic
 
-# Pasar el LIMIT (puede ser un número o "all")
+# 3. Benchmark y ranking (Escupiendo datos en tiempo real)
 measure_and_rank "$LIVE_FILE" "$OUTPUT" "$LIMIT" "$THREADS" "$DOMAIN"

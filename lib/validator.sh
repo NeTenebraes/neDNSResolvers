@@ -6,9 +6,9 @@ measure_and_rank() {
     local threads=$4; local target=$5
     local tmp_bench=$(mktemp)
 
-    log_status "Ranking de velocidad para $target..."
+    log_status "Iniciando ranking con $threads hilos para $target..."
 
-    # Escupe resultados en tiempo real
+    # Escupitajo de datos en tiempo real
     cat "$input" | xargs -P "$threads" -I {} sh -c '
         ms=$(dig @{} '$target' +tries=1 +timeout=1 | grep "Query time" | awk "{print \$4}")
         if [ ! -z "$ms" ]; then
@@ -17,7 +17,7 @@ measure_and_rank() {
         fi
     ' | tee "$tmp_bench"
 
-    # Lógica de recorte para el argumento -top
+    # Lógica de recorte -top
     if [[ "$limit" == "all" ]]; then
         sort -n "$tmp_bench" | awk '{print $2}' > "$output"
     else
@@ -25,6 +25,6 @@ measure_and_rank() {
     fi
     
     local final_count=$(wc -l < "$output")
-    echo -e "\n\e[1;32m[✔]\e[0m Proceso finalizado. $final_count resolvers guardados en $output"
+    echo -e "\n\e[1;32m[✔]\e[0m Resultado: $final_count resolvers en $output"
     rm -f "$tmp_bench"
 }

@@ -2,7 +2,7 @@
 # /opt/neDNSR/lib/helpers.sh
 
 cleanup() {
-    echo -e "\n\n[!] Saliendo y limpiando procesos..." >&2
+    echo -e "\n\n[!] Interrupción detectada. Limpiando procesos..." >&2
     pkill -P $$ 2>/dev/null
     exit 1
 }
