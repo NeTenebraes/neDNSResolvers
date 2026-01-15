@@ -46,8 +46,7 @@ done
 [[ -z "$OUTPUT" ]] && OUTPUT="$DEFAULT_OUTPUT"
 
 # --- FLUJO DE TRABAJO ---
-
-# Debug de rutas (Añade esto temporalmente)
+# Debug de rutas
 echo "[DEBUG] Buscando LIVE en: $LIVE_FILE"
 if [[ -f "$LIVE_FILE" ]]; then
     echo "[DEBUG] LIVE detectado. Tamaño: $(wc -l < "$LIVE_FILE")"
@@ -55,7 +54,7 @@ else
     echo "[DEBUG] LIVE NO detectado. Iniciando actualización forzosa."
 fi
 
-# Tu lógica actual corregida
+# lógica actual corregida
 if [[ ! -f "$LIVE_FILE" ]] || [[ "$UPDATE_MODE" == true ]]; then
     update_master_raw
     validate_raw_to_live "$THREADS"
