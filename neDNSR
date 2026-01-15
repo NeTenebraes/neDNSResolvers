@@ -3,53 +3,54 @@
 
 BASE_DIR="/opt/neDNSR"
 LIB_DIR="$BASE_DIR/lib"
-# Importar helpers primero para tener acceso a cleanup 
+RAW_FILE="$BASE_DIR/RAW.txt"
+LIVE_FILE="$BASE_DIR/LIVE.txt"
+DATE_FILE="$BASE_DIR/LIVE.date"
+
 source "$LIB_DIR/helpers.sh"
-
-# Registrar el trap usando la función que está dentro de helpers.sh [cite: 4]
-trap cleanup SIGINT SIGTERM
-
-# Resto de imports 
 source "$LIB_DIR/collector.sh"
 source "$LIB_DIR/validator.sh"
 
+trap cleanup SIGINT SIGTERM
+
 # Valores por defecto
 THREADS=300
-LIMIT=1000
-DOMAIN="google.com"
-OUTPUT="fast_resolvers.txt"
+LIMIT="all" # Por defecto infinito/todo
+UPDATE_MODE=false
 
 usage() {
-    echo "Uso: neDNSR -d <dominio> [-t <hilos>] [-l <limite>] [-o <archivo>]"
-    echo "  -d: Dominio para el benchmark (Ej: target.com)"
-    echo "  -l: Top N DNS rápidos a filtrar (Ej: 100 o 1000)"
-    echo "  -t: Hilos para validación y benchmark"
+    echo -e "Uso: neDNSR -d <dominio> [-o <archivo>] [-top <numero>] [--update]"
+    echo -e "  -d    : Dominio para el benchmark (ej: google.com)"
+    echo -e "  -o    : Archivo de salida (default: fast_resolvers.txt)"
+    echo -e "  -top  : Número de mejores DNS a filtrar (default: todos)"
+    echo -e "  --update : Ingesta nuevas fuentes y valida hacia LIVE"
     exit 1
 }
 
-while getopts "d:t:l:o:" opt; do
-    case $opt in
-        d) DOMAIN=$OPTARG ;;
-        t) THREADS=$OPTARG ;;
-        l) LIMIT=$OPTARG ;;
-        o) OUTPUT=$OPTARG ;;
-        *) usage ;;
+# Procesar argumentos manualmente para soportar -top
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -d) DOMAIN="$2"; shift ;;
+        -o) OUTPUT="$2"; shift ;;
+        -top) LIMIT="$2"; shift ;;
+        --update) UPDATE_MODE=true ;;
+        -h|--help) usage ;;
+        *) echo "Opción desconocida: $1"; usage ;;
     esac
+    shift
 done
 
 [[ -z "$DOMAIN" ]] && usage
+[[ -z "$OUTPUT" ]] && OUTPUT="fast_resolvers.txt"
 
-# PASO 1: Recolectar
-fetch_and_merge
+# --- LÓGICA DE DOS CAPAS ---
 
-# PASO 2: Validar
-echo "[*] Ejecutando DNSValidator..." >&2
-TMP_VALIDATED=$(mktemp)
-dnsvalidator -tL "$MASTER_LIST" -threads "$THREADS" -o "$TMP_VALIDATED"
-
-# PASO 3: Rankear (solo si hay resultados)
-if [[ -s "$TMP_VALIDATED" ]]; then
-    measure_and_rank "$TMP_VALIDATED" "$OUTPUT" "$LIMIT" "$THREADS" "$DOMAIN"
+if [[ ! -f "$LIVE_FILE" ]] || [[ "$UPDATE_MODE" == true ]]; then
+    update_master_raw
+    validate_raw_to_live "$THREADS"
 fi
 
-rm -f "$TMP_VALIDATED"
+clean_live_logic
+
+# Pasar el LIMIT (puede ser un número o "all")
+measure_and_rank "$LIVE_FILE" "$OUTPUT" "$LIMIT" "$THREADS" "$DOMAIN"

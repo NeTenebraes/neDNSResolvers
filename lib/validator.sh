@@ -2,28 +2,29 @@
 # /opt/neDNSR/lib/validator.sh
 
 measure_and_rank() {
-    local input=$1
-    local output=$2
-    local limit=$3
-    local threads=$4
-    local target=$5
+    local input=$1; local output=$2; local limit=$3
+    local threads=$4; local target=$5
     local tmp_bench=$(mktemp)
 
-    echo "[*] Rankeando Top $limit resolvers más rápidos para $target..." >&2
+    log_status "Ranking de velocidad para $target..."
 
-    # Benchmark paralelo: mide tiempo de respuesta real
+    # Escupe resultados en tiempo real
     cat "$input" | xargs -P "$threads" -I {} sh -c '
-        # Extraemos el Query time en ms usando dig
         ms=$(dig @{} '$target' +tries=1 +timeout=1 | grep "Query time" | awk "{print \$4}")
         if [ ! -z "$ms" ]; then
+            echo -e "\e[32m[+]\e[0m {} | ${ms}ms"
             echo "$ms {}"
         fi
-    ' > "$tmp_bench"
+    ' | tee "$tmp_bench"
 
-    # Ordenar: Menor latencia primero -> Tomar el límite -> Limpiar para dejar solo la IP
-    sort -n "$tmp_bench" | head -n "$limit" | awk '{print $2}' > "$output"
+    # Lógica de recorte para el argumento -top
+    if [[ "$limit" == "all" ]]; then
+        sort -n "$tmp_bench" | awk '{print $2}' > "$output"
+    else
+        sort -n "$tmp_bench" | head -n "$limit" | awk '{print $2}' > "$output"
+    fi
     
     local final_count=$(wc -l < "$output")
+    echo -e "\n\e[1;32m[✔]\e[0m Proceso finalizado. $final_count resolvers guardados en $output"
     rm -f "$tmp_bench"
-    echo "$final_count"
 }
