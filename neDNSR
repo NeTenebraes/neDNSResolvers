@@ -50,16 +50,27 @@ done
 [[ -z "$DOMAIN" ]] && usage
 [[ -z "$OUTPUT" ]] && OUTPUT="$DEFAULT_OUTPUT"
 
+echo -e "\e[1;34m[➜]\e[0m Configuración por defecto:"
+echo -e "  - Hilos: $THREADS"
+echo -e "  - Límite: $LIMIT"
+echo -e "  - Modo: $MODE"
+echo -e "  - Actualización: $UPDATE_MODE"
+
 # --- FLUJO DE TRABAJO ---
 # 1. Ingesta y Validación (Solo si no hay LIVE o se pide --update)
-if [[ ! -f "$LIVE_FILE" ]] || [[ "$UPDATE_MODE" == true ]]; then
-    echo -e "\e[1;33m[*] Iniciando actualización de base maestra...\e[0m"
-    update_master_raw
-    validate_raw_to_live "$THREADS"
+echo -e "\e[1;34m[➜]\e[0m Verificando existencia de archivos..."
+if [ ! -e "$LIVE_FILE" ] || [ "$UPDATE_MODE" = true ]; then
+  echo -e "\e[1;34m[➜]\e[0m Iniciando actualización de base maestra..."
+  update_master_raw
+  validate_raw_to_live "$THREADS"
 fi
 
 # 2. Limpieza antes del benchmark
+echo -e "\e[1;34m[➜]\e[0m Limpieza de lista LIVE..."
 clean_live_logic
 
 # 3. Benchmark y ranking
-measure_and_rank "$LIVE_FILE" "$OUTPUT" "$LIMIT" "$THREADS" "$DOMAIN" "$MODE"
+echo -e "\e[1;34m[➜]\e[0m Iniciando benchmark y ranking..."
+measure_and_rank "$LIVE_FILE" "$OUTPUT" "$LIMIT" "$THREADS" "" "$MODE"
+
+echo -e "\e[1;34m[➜]\e[0m Proceso terminado."
