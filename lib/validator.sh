@@ -19,18 +19,24 @@ measure_and_rank() {
     echo -e "\e[1;34m[➔]\e[0m Ejecutando en modo: \e[1;35m${mode^^}\e[0m"
 
     # --- CAMINO A: MODO DIRECT ---
-    if [ "$mode" = "direct" ]; then
-        echo -e "\e[1;33m[*] Validando Integridad (A) y Velocidad...\e[0m"
-        cat "$input" | xargs -P "$threads" -I {} sh -c "
-            res=\$(dig @{} $target +tries=1 +timeout=1)
-            recv_ip=\$(echo \"\$res\" | awk '/^$target\./ || /^$target / {print \$NF}' | grep -E '^([0-9]{1,3}\.){3}[0-9]{1,3}\$' | tail -n1)
-            ms=\$(echo \"\$res\" | grep 'Query time' | awk '{print \$4}')
-            
-            if [ \"\$recv_ip\" = \"$real_ip\" ] && [ -n \"\$ms\" ]; then
-                echo \"\$ms {}\"
-                printf \"\e[32m[+]\e[0m {} | \${ms}ms | \e[32mOK\e[0m\n\" > /dev/tty
-            fi
-        " > "$tmp_bench"
+if [ "$mode" = "direct" ]; then
+    echo -e "\e[1;33m[*] Validando Integridad (A) y Velocidad...\e[0m"
+    cat "$input" | xargs -P "$threads" -I {} sh -c '
+        target="$0"
+        real_ip="$1"
+        res_ip=$(dig @"{}" "$target" +short +tries=1 +timeout=1 | grep -E "^([0-9]{1,3}\.){3}[0-9]{1,3}$" | tail -n1)
+        ms=$(dig @"{}" "$target" +tries=1 +timeout=1 2>/dev/null | grep "Query time" | awk "{print \$4}")
+
+        # Opción 1: SOLO exigir IP válida (no igual a real_ip)
+        if [ -n "$res_ip" ] && [ -n "$ms" ]; then
+            echo "$ms {}"
+            printf "\033[32m[+]\033[0m {} | ${ms}ms | \033[32mOK\033[0m\n" > /dev/tty
+        fi
+
+        # Si quieres seguir exigiendo misma IP, cambia la condición por:
+        # if [ "$res_ip" = "$real_ip" ] && [ -n "$ms" ]; then
+    ' "$target" "$real_ip" > "$tmp_bench"
+
 
     # --- CAMINO B: MODO FULL (Doble Paso) ---
     else
