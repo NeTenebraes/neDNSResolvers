@@ -56,5 +56,5 @@ sudo ln -sf "$INSTALL_DIR/lib/dns_env/bin/dnsvalidator" /usr/local/bin/dnsvalida
 # Archivo de persistencia
 touch "$INSTALL_DIR/master_resolvers.txt"
 chmod 666 "$INSTALL_DIR/master_resolvers.txt"
-
+./I
 echo "[+] Instalación finalizada en $INSTALL_DIR"
